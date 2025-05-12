@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Water Quality Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background: #f2f6fa;
+    }
+    .button {
+      padding: 10px 20px;
+      margin: 5px;
+      border: none;
+      cursor: pointer;
+      border-radius: 6px;
+      background-color: #007bff;
+      color: white;
+    }
+    .button.active {
+      background-color: #28a745;
+    }
+    .section {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>💧 Water Quality Dashboard</h1>
+
+  <!-- Mode Selection -->
+  <div>
+    <button class="button active" id="manualBtn">Manual Mode</button>
+    <button class="button" id="autoBtn">Auto Mode</button>
+  </div>
+
+  <!-- Purpose Selection -->
+  <div>
+    <button class="button active" id="drinkingBtn">Drinking</button>
+    <button class="button" id="irrigationBtn">Irrigation</button>
+  </div>
+
+  <!-- Manual Mode Inputs -->
+  <div class="section" id="manualSection">
+    <h2>Enter Water Parameters</h2>
+    <label>pH: <input type="number" id="phInput" step="0.1"></label><br><br>
+    <label>TDS (ppm): <input type="number" id="tdsInput"></label><br><br>
+    <label>Turbidity (NTU): <input type="number" id="turbidityInput" step="0.1"></label><br><br>
+    <label>Temperature (°C): <input type="number" id="tempInput" step="0.1"></label><br><br>
+    <button class="button" onclick="analyze()">Analyze</button>
+  </div>
+
+  <!-- Result Section -->
+  <div class="section">
+    <h2>Analysis Result</h2>
+    <p id="loading"></p>
+    <pre id="resultText">Please enter values and click "Analyze".</pre>
+    <canvas id="resultChart" width="400" height="200"></canvas>
+  </div>
+
+  <script>
+    let currentPurpose = "drinking";
+    let currentMode = "manual";
+    let chartInstance = null;
+
+    // Mode Switching
+    document.getElementById('manualBtn').onclick = () => {
+      currentMode = "manual";
+      document.getElementById('manualBtn').classList.add('active');
+      document.getElementById('autoBtn').classList.remove('active');
+      document.getElementById('manualSection').style.display = 'block';
+      document.getElementById('resultText').innerText = "Please enter values and click \"Analyze\".";
+      document.getElementById('loading').innerText = "";
+      if (chartInstance) chartInstance.destroy();
+    };
+
+    document.getElementById('autoBtn').onclick = () => {
+      currentMode = "auto";
+      document.getElementById('autoBtn').classList.add('active');
+      document.getElementById('manualBtn').classList.remove('active');
+      document.getElementById('manualSection').style.display = 'none';
+      document.getElementById('resultText').innerText = "⚠️ Datastreams not linked.";
+      document.getElementById('loading').innerText = "";
+      if (chartInstance) chartInstance.destroy();
+    };
+
+    // Purpose Switching
+    document.getElementById('drinkingBtn').onclick = () => togglePurpose('drinking');
+    document.getElementById('irrigationBtn').onclick = () => togglePurpose('irrigation');
+
+    function togglePurpose(purpose) {
+      currentPurpose = purpose;
+      document.getElementById('drinkingBtn').classList.remove('active');
+      document.getElementById('irrigationBtn').classList.remove('active');
+      if (purpose === 'drinking') {
+        document.getElementById('drinkingBtn').classList.add('active');
+      } else {
+        document.getElementById('irrigationBtn').classList.add('active');
+      }
+    }
+
+    function analyze() {
+      if (currentMode !== 'manual') {
+        document.getElementById('resultText').innerText = "⚠️ Datastreams not linked.";
+        return;
+      }
+
+      const ph = parseFloat(document.getElementById('phInput').value);
+      const tds = parseFloat(document.getElementById('tdsInput').value);
+      const turbidity = parseFloat(document.getElementById('turbidityInput').value);
+      const temp = parseFloat(document.getElementById('tempInput').value);
+
+      if (isNaN(ph) || isNaN(tds) || isNaN(turbidity) || isNaN(temp)) {
+        document.getElementById('resultText').innerText = "⚠️ Please enter all values before analyzing.";
+        return;
+      }
+
+      document.getElementById('resultText').innerText = "";
+      document.getElementById('loading').innerText = "🔄 Analyzing data, please wait...";
+      if (chartInstance) chartInstance.destroy();
+
+      setTimeout(() => {
+        let total = 0, passed = 0;
+        let messages = [];
+        let clearness = [];
+        let labels = [];
+
+        function check(param, value, min, max) {
+          total++;
+          let valid = value >= min && value <= max;
+          if (valid) passed++;
+          messages.push(`${param}: ${valid ? "✅ Good" : "❌ Out of Range"}`);
+          clearness.push(valid ? 100 : 0);
+          labels.push(param);
+        }
+
+        if (currentPurpose === "drinking") {
+          check("pH", ph, 6.5, 8.5);
+          check("TDS", tds, 0, 500);
+          check("Turbidity", turbidity, 0, 5);
+          check("Temperature", temp, 5, 35);
+        } else {
+          check("pH", ph, 5.5, 9.0);
+          check("TDS", tds, 0, 2000);
+          // Turbidity is ignored
+          messages.push("Turbidity: ⚠️ Not relevant for irrigation");
+          check("Temperature", temp, 5, 45);
+        }
+
+        const percent = Math.round((passed / total) * 100);
+        const verdict = (percent === 100) ? "✅ Water is SAFE" : "❌ Water is NOT safe";
+
+        document.getElementById('resultText').innerText =
+          `🔎 Result for ${currentPurpose.toUpperCase()}:\n\n${messages.join('\n')}\n\n💧 Clearness: ${percent}%\n${verdict}`;
+        document.getElementById('loading').innerText = "";
+
+        // Render Chart
+        const ctx = document.getElementById('resultChart').getContext('2d');
+        chartInstance = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Parameter Status (Clearness %)',
+              data: clearness,
+              backgroundColor: ['#4caf50', '#2196f3', '#ff9800', '#9c27b0']
+            }]
+          },
+          options: {
+            plugins: {
+              title: {
+                display: true,
+                text: currentPurpose === 'drinking'
+                  ? '💧 Drinking Water Analysis'
+                  : '🌿 Irrigation Suitability Check',
+                font: {
+                  size: 18
+                }
+              }
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                max: 100,
+                title: {
+                  display: true,
+                  text: 'Clearness (%)'
+                }
+              }
+            }
+          }
+        });
+      }, 3000);
+    }
+  </script>
+
+</body>
+</html>
